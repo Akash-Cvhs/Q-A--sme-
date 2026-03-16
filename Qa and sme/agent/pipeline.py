@@ -7,8 +7,8 @@ import json
 from typing import Dict, Any
 
 # FIXED: Use absolute imports from agent package
-from .qa_gent import validate_enrollment
-from .sme_agent import SMEAgent
+from qa_gent import validate_enrollment
+from sme_agent import SMEAgent
 
 def process_enrollment(form_data: Dict[str, Any]) -> Dict[str, Any]:
     """
