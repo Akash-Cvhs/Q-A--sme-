@@ -1,7 +1,7 @@
 """
 Healthcare Enrollment Form Processing Pipeline - Asynchronous Version
 Processes multiple forms in parallel while maintaining dependencies
-Supports both flat and nested {value, confidence} input formats
+ONLY supports nested {value, confidence} input format
 """
 
 import json
@@ -9,7 +9,7 @@ import sys
 import os
 import asyncio
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,30 +17,50 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Import from agent modules
 from qa_agent.qa_agent_async import validate_enrollment_async
 from sme_agent.sme_agent import SMEAgent
-from qa_agent.format_converter import convert_input, convert_output
+from qa_agent.format_converter import convert_input, convert_output, is_nested_format
 
 
 async def process_enrollment_async(form_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Asynchronous enrollment form processing.
-    Supports both flat and nested {value, confidence} formats.
+    ONLY accepts nested {value, confidence} format.
     
     Flow:
-    1. Convert input format (if nested)
-    2. QA Agent validates the form (async with parallel tools)
-    3. SME Agent applies corrections (sync)
-    4. Convert output back to original format
+    1. Validate input format (must be nested)
+    2. Convert to flat format for processing
+    3. QA Agent validates the form (async with parallel tools)
+    4. SME Agent applies corrections (sync)
+    5. Convert output back to nested format
     
     Args:
-        form_data: Input enrollment form dictionary (any format)
+        form_data: Input enrollment form dictionary in nested {value, confidence} format
     
     Returns:
-        dict: Corrected enrollment form in same format as input
+        dict: Corrected enrollment form in nested {value, confidence} format
+        
+    Raises:
+        ValueError: If input is not in nested {value, confidence} format
     """
     
     # ============================================================
-    # STEP 0: FORMAT CONVERSION (if needed)
+    # STEP 0: VALIDATE INPUT FORMAT (must be nested)
     # ============================================================
+    if not is_nested_format(form_data):
+        raise ValueError(
+            "Invalid input format. This pipeline ONLY accepts nested {value, confidence} format.\n"
+            "Expected format:\n"
+            "{\n"
+            '  "Information": {\n'
+            '    "Patient": {\n'
+            '      "first_name": {"value": "John", "confidence": 1.0},\n'
+            '      "last_name": {"value": "Smith", "confidence": 1.0}\n'
+            "    }\n"
+            "  }\n"
+            "}\n"
+            f"Received: {type(form_data).__name__} without nested structure"
+        )
+    
+    # Convert nested format to flat for processing
     flat_form, metadata, was_nested = convert_input(form_data)
     
     # ============================================================
@@ -65,7 +85,7 @@ async def process_enrollment_async(form_data: Dict[str, Any]) -> Dict[str, Any]:
         if missing_fields or incorrect_fields:
             has_issues = True
     
-    # If no issues, convert back to original format and return
+    # If no issues, convert back to nested format and return
     if not has_issues:
         return convert_output(qa_result, metadata, was_nested)
     
@@ -93,7 +113,7 @@ async def process_enrollment_async(form_data: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     # ============================================================
-    # STEP 3: RESTORE ORIGINAL FORMAT
+    # STEP 3: RESTORE NESTED FORMAT
     # ============================================================
     return convert_output(corrected_form, metadata, was_nested)
 
@@ -101,13 +121,25 @@ async def process_enrollment_async(form_data: Dict[str, Any]) -> Dict[str, Any]:
 async def process_multiple_forms_async(forms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Process multiple enrollment forms in parallel.
+    ONLY accepts nested {value, confidence} format.
     
     Args:
-        forms: List of enrollment form dictionaries
+        forms: List of enrollment form dictionaries in nested format
     
     Returns:
-        List of corrected forms or error dicts
+        List of corrected forms in nested format or error dicts
+        
+    Raises:
+        ValueError: If any form is not in nested {value, confidence} format
     """
+    # Validate all forms are in nested format
+    for i, form in enumerate(forms, 1):
+        if not is_nested_format(form):
+            raise ValueError(
+                f"Form {i} is not in nested {{value, confidence}} format. "
+                "All forms must use nested format."
+            )
+    
     print("=" * 60)
     print(f"PROCESSING {len(forms)} FORMS IN PARALLEL")
     print("=" * 60)
@@ -132,22 +164,88 @@ async def process_multiple_forms_async(forms: List[Dict[str, Any]]) -> List[Dict
     return results
 
 
-def process_enrollment(form_data: Dict[str, Any]) -> Dict[str, Any]:
+def process_enrollment(form_data) -> Any:
     """
-    Synchronous wrapper for single form processing.
+    Universal enrollment form processor - NESTED FORMAT ONLY.
+    Automatically detects single form or multiple forms.
+    
+    IMPORTANT: This pipeline ONLY accepts nested {value, confidence} format.
     
     Args:
-        form_data: Input enrollment form dictionary
+        form_data: Can be either:
+            - Single form: dict with nested {value, confidence} structure
+            - Multiple forms: list of dicts with nested structure
     
     Returns:
-        dict: Corrected enrollment form or error dict
+        - If single form (dict input): Returns corrected form dict in nested format
+        - If multiple forms (list input): Returns list of corrected forms in nested format
+    
+    Raises:
+        ValueError: If input is not in nested {value, confidence} format
+        TypeError: If input is neither dict nor list
+    
+    Examples:
+        # Single form (nested format)
+        result = process_enrollment({
+            "Information": {
+                "Patient": {
+                    "first_name": {"value": "John", "confidence": 1.0}
+                }
+            }
+        })
+        
+        # Multiple forms (nested format)
+        results = process_enrollment([form1, form2, form3])
     """
-    return asyncio.run(process_enrollment_async(form_data))
+    # Detect if input is a list (multiple forms) or dict (single form)
+    if isinstance(form_data, list):
+        # Multiple forms - validate all are nested format
+        for i, form in enumerate(form_data, 1):
+            if not isinstance(form, dict):
+                raise TypeError(f"Form {i} must be a dictionary, got {type(form).__name__}")
+            if not is_nested_format(form):
+                raise ValueError(
+                    f"Form {i} is not in nested {{value, confidence}} format. "
+                    "All forms must use nested format with structure: "
+                    '{"field": {"value": ..., "confidence": ...}}'
+                )
+        # Process in parallel
+        return asyncio.run(process_multiple_forms_async(form_data))
+        
+    elif isinstance(form_data, dict):
+        # Single form - validate nested format
+        if not is_nested_format(form_data):
+            raise ValueError(
+                "Input is not in nested {value, confidence} format.\n"
+                "This pipeline ONLY accepts nested format.\n\n"
+                "Expected format:\n"
+                "{\n"
+                '  "Information": {\n'
+                '    "Patient": {\n'
+                '      "first_name": {"value": "John", "confidence": 1.0},\n'
+                '      "last_name": {"value": "Smith", "confidence": 1.0}\n'
+                "    }\n"
+                "  }\n"
+                "}\n\n"
+                "Your input appears to be in flat format (plain values without {value, confidence})."
+            )
+        # Process single form
+        return asyncio.run(process_enrollment_async(form_data))
+        
+    else:
+        # Invalid input type
+        raise TypeError(
+            f"Invalid input type: {type(form_data).__name__}. "
+            "Expected dict (single form) or list (multiple forms)."
+        )
 
 
 def process_multiple_forms(forms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Synchronous wrapper for multiple form processing.
+    DEPRECATED: Use process_enrollment() instead.
+    This function is kept for backward compatibility.
+    
+    Process multiple enrollment forms in parallel.
     
     Args:
         forms: List of enrollment form dictionaries
@@ -155,7 +253,7 @@ def process_multiple_forms(forms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     Returns:
         List of corrected forms or error dicts
     """
-    return asyncio.run(process_multiple_forms_async(forms))
+    return process_enrollment(forms)
 
 
 # ============================================================
