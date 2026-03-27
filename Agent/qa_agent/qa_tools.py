@@ -164,7 +164,12 @@ def qa_validate_insurance_names(form_json: Union[str, dict]) -> dict:
         # ------------------------
         # PRIMARY INSURANCE
         # ------------------------
-        primary_name = (primary_ins.get("insurance_company_name") or "").strip()
+        # Handle both flat and nested {value, confidence} formats
+        primary_name_raw = primary_ins.get("insurance_company_name")
+        if isinstance(primary_name_raw, dict) and 'value' in primary_name_raw:
+            primary_name = (primary_name_raw.get('value') or "").strip()
+        else:
+            primary_name = (primary_name_raw or "").strip()
 
         if primary_name:
             qprint(f"  Checking primary insurance: '{primary_name}'")
@@ -215,7 +220,12 @@ def qa_validate_insurance_names(form_json: Union[str, dict]) -> dict:
         # ------------------------
         # SECONDARY INSURANCE
         # ------------------------
-        secondary_name = (secondary_ins.get("insurance_company_name") or "").strip()
+        # Handle both flat and nested {value, confidence} formats
+        secondary_name_raw = secondary_ins.get("insurance_company_name")
+        if isinstance(secondary_name_raw, dict) and 'value' in secondary_name_raw:
+            secondary_name = (secondary_name_raw.get('value') or "").strip()
+        else:
+            secondary_name = (secondary_name_raw or "").strip()
 
         if secondary_name:
             qprint(f"  Checking secondary insurance: '{secondary_name}'")

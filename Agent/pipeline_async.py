@@ -1,6 +1,7 @@
 """
 Healthcare Enrollment Form Processing Pipeline - Asynchronous Version
 Processes multiple forms in parallel while maintaining dependencies
+Supports both flat and nested {value, confidence} input formats
 """
 
 import json
@@ -16,28 +17,37 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Import from agent modules
 from qa_agent.qa_agent_async import validate_enrollment_async
 from sme_agent.sme_agent import SMEAgent
+from qa_agent.format_converter import convert_input, convert_output
 
 
 async def process_enrollment_async(form_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Asynchronous enrollment form processing.
+    Supports both flat and nested {value, confidence} formats.
     
     Flow:
-    1. QA Agent validates the form (async with parallel tools)
-    2. SME Agent applies corrections (sync)
+    1. Convert input format (if nested)
+    2. QA Agent validates the form (async with parallel tools)
+    3. SME Agent applies corrections (sync)
+    4. Convert output back to original format
     
     Args:
-        form_data: Input enrollment form dictionary
+        form_data: Input enrollment form dictionary (any format)
     
     Returns:
-        dict: Corrected enrollment form or error dict
+        dict: Corrected enrollment form in same format as input
     """
+    
+    # ============================================================
+    # STEP 0: FORMAT CONVERSION (if needed)
+    # ============================================================
+    flat_form, metadata, was_nested = convert_input(form_data)
     
     # ============================================================
     # STEP 1: Q/A VALIDATION (ASYNC)
     # ============================================================
     try:
-        qa_result = await validate_enrollment_async(form_data)
+        qa_result = await validate_enrollment_async(flat_form)
     except Exception as e:
         print(f"\nQ/A Validation Failed: {str(e)}")
         return {
@@ -55,9 +65,9 @@ async def process_enrollment_async(form_data: Dict[str, Any]) -> Dict[str, Any]:
         if missing_fields or incorrect_fields:
             has_issues = True
     
-    # If no issues, return the original form
+    # If no issues, convert back to original format and return
     if not has_issues:
-        return qa_result
+        return convert_output(qa_result, metadata, was_nested)
     
     # ============================================================
     # STEP 2: SME CORRECTION (SYNC)
@@ -82,7 +92,10 @@ async def process_enrollment_async(form_data: Dict[str, Any]) -> Dict[str, Any]:
             "qa_result": qa_result
         }
     
-    return corrected_form
+    # ============================================================
+    # STEP 3: RESTORE ORIGINAL FORMAT
+    # ============================================================
+    return convert_output(corrected_form, metadata, was_nested)
 
 
 async def process_multiple_forms_async(forms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
