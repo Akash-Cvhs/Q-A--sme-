@@ -10,6 +10,12 @@ import re
 
 load_dotenv()
 
+# Quiet mode helper
+def qprint(*args, **kwargs):
+    """Print only if not in quiet mode"""
+    if not os.environ.get('QA_QUIET_MODE'):
+        print(*args, **kwargs)
+
 GCP_URL = "https://addressvalidation.googleapis.com/v1:validateAddress"
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY","AIzaSyCJd1lEIhrDT90ZzS7MqNL-SCEbjjS1CKQ")
 
@@ -52,7 +58,7 @@ def call_google_api(payload: dict, retries=2):
             return r.json()
         except Exception as e:
             if attempt == retries:
-                print(f"❌ Google API failed after retries: {e}")
+                qprint(f"❌ Google API failed after retries: {e}")
                 return None
             time.sleep(0.5)
 
@@ -282,7 +288,7 @@ def match_insurance_in_db(submitted_name: str) -> dict:
 
     conn = get_db_connection()
     if not conn:
-        print("⚠️ DB unavailable — skipping insurance validation")
+        qprint("⚠️ DB unavailable — skipping insurance validation")
         return {"success": True, "match_type": "skipped"}
 
     try:
@@ -351,7 +357,7 @@ def match_insurance_in_db(submitted_name: str) -> dict:
 
         best = candidates[0]
 
-        print(f"    🏢 Best match: {best['official_name']} ({best['confidence']}%)")
+        qprint(f"    🏢 Best match: {best['official_name']} ({best['confidence']}%)")
 
         # ------------------------
         # STEP 4: DECISION
@@ -382,7 +388,7 @@ def match_insurance_in_db(submitted_name: str) -> dict:
             }
 
     except Exception as e:
-        print(f"⚠️ Insurance matching error: {e}")
+        qprint(f"⚠️ Insurance matching error: {e}")
         import traceback
         traceback.print_exc()
         return {"success": True, "match_type": "error"}   
@@ -399,20 +405,20 @@ def nppes_lookup_tool(npi_number: str):
     cached_result = cache.get_npi_lookup(npi_number)
     
     if cached_result is not None:
-        print(f"  → NPI {npi_number} found in cache")
+        qprint(f"  → NPI {npi_number} found in cache")
         return cached_result
     
     # Cache miss - query NPPES API
     url = f"https://npiregistry.cms.hhs.gov/api/?number={npi_number}&version=2.1"
     
-    print(f"  → Querying NPPES for NPI: {npi_number}")
+    qprint(f"  → Querying NPPES for NPI: {npi_number}")
     
     try:
         response = requests.get(url, timeout=10)
         data = response.json()
         
         if data.get("result_count", 0) == 0:
-            print(f"  ✗ NPI {npi_number} not found in registry")
+            qprint(f"  ✗ NPI {npi_number} not found in registry")
             result = {"error": "NPI not found in registry", "searched_npi": npi_number}
             # Cache negative results too (with error key)
             cache.set_npi_lookup(npi_number, result)
@@ -451,7 +457,7 @@ def nppes_lookup_tool(npi_number: str):
             "phone": practice_address.get("telephone_number", "")
         }
         
-        print(f"  ✓ Found: {provider_name} at {result['city']}, {result['state']}")
+        qprint(f"  ✓ Found: {provider_name} at {result['city']}, {result['state']}")
         
         # Cache the successful result
         cache.set_npi_lookup(npi_number, result)
@@ -459,7 +465,7 @@ def nppes_lookup_tool(npi_number: str):
         return result
         
     except Exception as e:
-        print(f"  ✗ NPPES API error: {e}")
+        qprint(f"  ✗ NPPES API error: {e}")
         result = {"error": f"NPPES lookup error: {str(e)}", "searched_npi": npi_number}
         # Don't cache API errors (transient failures)
         return result
@@ -483,12 +489,12 @@ def nppes_fuzzy_search(physician_name: str, address: str, city: str, state: str,
     cached_result = cache.get_fuzzy_search(physician_name, address, city, state)
     
     if cached_result is not None:
-        print(f"  → Fuzzy search result found in cache")
+        qprint(f"  → Fuzzy search result found in cache")
         return cached_result
     
     # Cache miss - perform fuzzy search
-    print(f"  → Fuzzy searching NPPES: {physician_name}")
-    print(f"     Location: {address}, {city}, {state}")
+    qprint(f"  → Fuzzy searching NPPES: {physician_name}")
+    qprint(f"     Location: {address}, {city}, {state}")
     city = city.strip()
     state = state.strip().upper()
     
@@ -502,7 +508,7 @@ def nppes_fuzzy_search(physician_name: str, address: str, city: str, state: str,
     providers = []
     
     # STRATEGY 1: Search by last name + state
-    print(f"  → Strategy 1: Searching by last name '{last_name}' in {state}")
+    qprint(f"  → Strategy 1: Searching by last name '{last_name}' in {state}")
     url1 = f"https://npiregistry.cms.hhs.gov/api/?version=2.1&last_name={last_name}&state={state}&limit=200"
     
     try:
@@ -510,16 +516,16 @@ def nppes_fuzzy_search(physician_name: str, address: str, city: str, state: str,
         data = response.json()
         
         if data.get("result_count", 0) > 0:
-            print(f"  ✓ Found {data.get('result_count')} providers with last name '{last_name}' in {state}")
+            qprint(f"  ✓ Found {data.get('result_count')} providers with last name '{last_name}' in {state}")
             providers.extend(data.get("results", []))
         else:
-            print(f"  ℹ️  No providers found with last name '{last_name}' in {state}")
+            qprint(f"  ℹ️  No providers found with last name '{last_name}' in {state}")
     except Exception as e:
-        print(f"  ⚠️  Strategy 1 failed: {e}")
+        qprint(f"  ⚠️  Strategy 1 failed: {e}")
     
     # STRATEGY 2: Search by city + state (fallback)
     if len(providers) < 10:
-        print(f"  → Strategy 2: Searching by city '{city}' in {state}")
+        qprint(f"  → Strategy 2: Searching by city '{city}' in {state}")
         url2 = f"https://npiregistry.cms.hhs.gov/api/?version=2.1&city={city}&state={state}&limit=200"
         
         try:
@@ -527,16 +533,16 @@ def nppes_fuzzy_search(physician_name: str, address: str, city: str, state: str,
             data = response.json()
             
             if data.get("result_count", 0) > 0:
-                print(f"  ✓ Found {data.get('result_count')} providers in {city}, {state}")
+                qprint(f"  ✓ Found {data.get('result_count')} providers in {city}, {state}")
                 providers.extend(data.get("results", []))
             else:
-                print(f"  ℹ️  No providers found in {city}, {state}")
+                qprint(f"  ℹ️  No providers found in {city}, {state}")
         except Exception as e:
-            print(f"  ⚠️  Strategy 2 failed: {e}")
+            qprint(f"  ⚠️  Strategy 2 failed: {e}")
     
     # STRATEGY 3: Search by state only (last resort)
     if len(providers) < 10:
-        print(f"  → Strategy 3: Searching entire state {state}")
+        qprint(f"  → Strategy 3: Searching entire state {state}")
         url3 = f"https://npiregistry.cms.hhs.gov/api/?version=2.1&state={state}&enumeration_type=NPI-1&limit=200"
         
         try:
@@ -544,18 +550,18 @@ def nppes_fuzzy_search(physician_name: str, address: str, city: str, state: str,
             data = response.json()
             
             if data.get("result_count", 0) > 0:
-                print(f"  ✓ Found {data.get('result_count')} providers in {state}")
+                qprint(f"  ✓ Found {data.get('result_count')} providers in {state}")
                 providers.extend(data.get("results", []))
             else:
-                print(f"  ✗ No providers found in {state}")
+                qprint(f"  ✗ No providers found in {state}")
         except Exception as e:
-            print(f"  ⚠️  Strategy 3 failed: {e}")
+            qprint(f"  ⚠️  Strategy 3 failed: {e}")
     
     if not providers:
-        print(f"  ✗ All search strategies failed - no providers found")
+        qprint(f"  ✗ All search strategies failed - no providers found")
         return {"error": "No providers found after exhaustive search", "candidates": []}
     
-    print(f"  ℹ️  Total candidates collected: {len(providers)}")
+    qprint(f"  ℹ️  Total candidates collected: {len(providers)}")
     
     # Remove duplicates
     unique_providers = {p.get("number"): p for p in providers}.values()
@@ -636,10 +642,10 @@ def nppes_fuzzy_search(physician_name: str, address: str, city: str, state: str,
     
     if top_candidates:
         best = top_candidates[0]
-        print(f"  ✓ Best match: {best['provider_name']} (confidence: {best['confidence_score']}%)")
-        print(f"     Name: {best['name_match']}% (PRIMARY) | Address: {best['address_match']}% | City: {best['city_match']}%")
+        qprint(f"  ✓ Best match: {best['provider_name']} (confidence: {best['confidence_score']}%)")
+        qprint(f"     Name: {best['name_match']}% (PRIMARY) | Address: {best['address_match']}% | City: {best['city_match']}%")
     else:
-        print(f"  ✗ No providers with name match ≥50% found")
+        qprint(f"  ✗ No providers with name match ≥50% found")
     
     result = {
         "candidates": top_candidates,

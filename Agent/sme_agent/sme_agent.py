@@ -8,6 +8,14 @@ back to the original form data.
 """
 
 import copy
+import os
+
+
+# Quiet mode helper
+def qprint(*args, **kwargs):
+    """Print only if not in quiet mode"""
+    if not os.environ.get('QA_QUIET_MODE'):
+        print(*args, **kwargs)
 
 
 class SMEAgent:
@@ -94,14 +102,14 @@ class SMEAgent:
         
         # Skip if no expected value
         if expected is None:
-            print(f"  ⚠️  Skipping {field_key}: No expected value")
+            qprint(f"  Skipping {field_key}: No expected value")
             return False
         
         # Get the form path for this field
         form_path = self.FIELD_MAPPING.get(field_key)
         
         if not form_path:
-            print(f"  ⚠️  Skipping {field_key}: No mapping defined")
+            qprint(f"  Skipping {field_key}: No mapping defined")
             return False
         
         # Get current value
@@ -110,10 +118,10 @@ class SMEAgent:
         # Apply correction
         if self._set_nested(form_data, form_path, expected):
             submitted = correction.get("submitted", current_value)
-            print(f"  ✓ {field_key}: '{submitted}' → '{expected}'")
+            qprint(f"  Applied {field_key}: '{submitted}' -> '{expected}'")
             return True
         else:
-            print(f"  ✗ Failed to apply {field_key}")
+            qprint(f"  Failed to apply {field_key}")
             return False
     
     def run(self, qa_output: dict) -> dict:
@@ -129,16 +137,16 @@ class SMEAgent:
         Returns:
             dict: Corrected enrollment form
         """
-        print("\n" + "=" * 60)
-        print("SME Agent: Applying Corrections")
-        print("=" * 60)
+        qprint("\n" + "=" * 60)
+        qprint("SME Agent: Applying Corrections")
+        qprint("=" * 60)
         
         # Extract data from QA output
         form_data = qa_output.get("form_data")
         incorrect_fields = qa_output.get("incorrect_fields", {})
         
         if not form_data:
-            print("❌ Error: No form_data in QA output")
+            qprint("❌ Error: No form_data in QA output")
             return {
                 "error": "INVALID_QA_OUTPUT",
                 "message": "QA output missing 'form_data' key"
@@ -148,10 +156,10 @@ class SMEAgent:
         corrected_form = copy.deepcopy(form_data)
         
         if not incorrect_fields:
-            print("\n✓ No corrections needed - form is valid")
+            qprint("\nNo corrections needed - form is valid")
             return corrected_form
         
-        print(f"\n📋 Applying {len(incorrect_fields)} corrections...\n")
+        qprint(f"\nApplying {len(incorrect_fields)} corrections...\n")
         
         # Apply each correction
         applied_count = 0
@@ -164,11 +172,11 @@ class SMEAgent:
                 skipped_count += 1
         
         # Summary
-        print("\n" + "-" * 60)
-        print(f"✅ Applied: {applied_count} corrections")
+        qprint("\n" + "-" * 60)
+        qprint(f"Applied: {applied_count} corrections")
         if skipped_count > 0:
-            print(f"⚠️  Skipped: {skipped_count} corrections")
-        print("-" * 60)
+            qprint(f"Skipped: {skipped_count} corrections")
+        qprint("-" * 60)
         
         return corrected_form
 

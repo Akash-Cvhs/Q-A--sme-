@@ -3,8 +3,15 @@ from .helpers import nppes_lookup_tool, nppes_fuzzy_search
 from .schemas import FieldCorrection
 
 import json
+import os
 import requests
 from typing import Union
+
+# Quiet mode helper
+def qprint(*args, **kwargs):
+    """Print only if not in quiet mode"""
+    if not os.environ.get('QA_QUIET_MODE'):
+        print(*args, **kwargs)
 
 from .helpers import (
     cross_validate_address_fields,
@@ -53,7 +60,7 @@ def qa_detect_missing_fields(form_json: Union[str, dict]) -> dict:
         return {"missing_fields": missing}
         
     except Exception as e:
-        print(f"Error in qa_detect_missing_fields: {e}")
+        qprint(f"Error in qa_detect_missing_fields: {e}")
         return {"missing_fields": {}, "error": str(e)}
 
 
@@ -78,22 +85,22 @@ def qa_validate_patient_address(form_json: dict) -> dict:
             "zip_code": patient.get("postalcode", "")
         }
 
-        print("🔍 QA Address Validation (Google Address Validation API only)")
-        print(address)
+        qprint("QA Address Validation (Google Address Validation API only)")
+        qprint(address)
 
         # return cross_validate_address_fields(address)
         # 1. Capture the result in a variable
         validated_address = cross_validate_address_fields(address)
 
         # 2. Print the result (the "after" version)
-        print("✅ Address after cross-validation:")
-        print(validated_address)
+        qprint("Address after cross-validation:")
+        qprint(validated_address)
 
         # 3. Finally, return the result to the caller
         return validated_address
     
     except Exception as e:
-        print(f"Error in qa_validate_physician_address: {e}")
+        qprint(f"Error in qa_validate_physician_address: {e}")
         return {"address_valid": True, "error": str(e)}
     
 
@@ -122,23 +129,23 @@ def qa_validate_physician_address(form_json: Union[str, dict]) -> dict:
         }
 
         
-        print("🔍 Validating physician address against NPPES...")
-        print(submitted_address)
+        qprint("Validating physician address against NPPES...")
+        qprint(submitted_address)
 
         # return cross_validate_address_fields(submitted_address)
         # 1. Capture the result in a variable
         validated_address = cross_validate_address_fields(submitted_address)
 
         # 2. Print the result (the "after" version)
-        print("✅ Address after cross-validation:")
-        print(validated_address)
+        qprint("Address after cross-validation:")
+        qprint(validated_address)
 
         # 3. Finally, return the result to the caller
         return validated_address
         
 
     except Exception as e:
-        print(f"Error in qa_validate_physician_address: {e}")
+        qprint(f"Error in qa_validate_physician_address: {e}")
         return {"address_valid": True, "error": str(e)}
 
 
@@ -160,18 +167,18 @@ def qa_validate_insurance_names(form_json: Union[str, dict]) -> dict:
         primary_name = (primary_ins.get("insurance_company_name") or "").strip()
 
         if primary_name:
-            print(f"  🔍 Checking primary insurance: '{primary_name}'")
+            qprint(f"  Checking primary insurance: '{primary_name}'")
             result = match_insurance_in_db(primary_name)
 
             if result.get("success"):
 
                 if result["match_type"] == "exact":
-                    print(f"  ✅ Exact match: {primary_name}")
+                    qprint(f"  Exact match: {primary_name}")
                     # No correction needed - exact match
 
                 elif result["match_type"] == "fuzzy_strong":
                     # High confidence fuzzy match - add to incorrect_fields (no auto-correction)
-                    print(f"  🔍 Fuzzy match found: {primary_name} → {result['official_name']} ({result['confidence']}%)")
+                    qprint(f"  Fuzzy match found: {primary_name} -> {result['official_name']} ({result['confidence']}%)")
                     incorrect["primary_insurance_company_name"] = {
                         "submitted": primary_name,
                         "expected": result["official_name"],
@@ -181,7 +188,7 @@ def qa_validate_insurance_names(form_json: Union[str, dict]) -> dict:
 
                 elif result["match_type"] == "fuzzy_medium":
                     # Medium confidence fuzzy match - add to incorrect_fields
-                    print(f"  🔍 Fuzzy match found: {primary_name} → {result['official_name']} ({result['confidence']}%)")
+                    qprint(f"  Fuzzy match found: {primary_name} -> {result['official_name']} ({result['confidence']}%)")
                     incorrect["primary_insurance_company_name"] = {
                         "submitted": primary_name,
                         "expected": result["official_name"],
@@ -211,18 +218,18 @@ def qa_validate_insurance_names(form_json: Union[str, dict]) -> dict:
         secondary_name = (secondary_ins.get("insurance_company_name") or "").strip()
 
         if secondary_name:
-            print(f"  🔍 Checking secondary insurance: '{secondary_name}'")
+            qprint(f"  Checking secondary insurance: '{secondary_name}'")
             result = match_insurance_in_db(secondary_name)
 
             if result.get("success"):
 
                 if result["match_type"] == "exact":
-                    print(f"  ✅ Exact match: {secondary_name}")
+                    qprint(f"  Exact match: {secondary_name}")
                     # No correction needed - exact match
 
                 elif result["match_type"] == "fuzzy_strong":
                     # High confidence fuzzy match - add to incorrect_fields (no auto-correction)
-                    print(f"  🔍 Fuzzy match found: {secondary_name} → {result['official_name']} ({result['confidence']}%)")
+                    qprint(f"  Fuzzy match found: {secondary_name} -> {result['official_name']} ({result['confidence']}%)")
                     incorrect["secondary_insurance_company_name"] = {
                         "submitted": secondary_name,
                         "expected": result["official_name"],
@@ -232,7 +239,7 @@ def qa_validate_insurance_names(form_json: Union[str, dict]) -> dict:
 
                 elif result["match_type"] == "fuzzy_medium":
                     # Medium confidence fuzzy match - add to incorrect_fields
-                    print(f"  🔍 Fuzzy match found: {secondary_name} → {result['official_name']} ({result['confidence']}%)")
+                    qprint(f"  Fuzzy match found: {secondary_name} -> {result['official_name']} ({result['confidence']}%)")
                     incorrect["secondary_insurance_company_name"] = {
                         "submitted": secondary_name,
                         "expected": result["official_name"],
@@ -262,7 +269,7 @@ def qa_validate_insurance_names(form_json: Union[str, dict]) -> dict:
         }
 
     except Exception as e:
-        print(f"Error in qa_validate_insurance_names: {e}")
+        qprint(f"Error in qa_validate_insurance_names: {e}")
         import traceback
         traceback.print_exc()
         return {"valid": True, "incorrect_fields": {}, "error": str(e)}
